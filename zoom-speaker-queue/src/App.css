@@ -1,0 +1,19 @@
+/* Speaker card animations */
+.speaker-active {
+  @apply border-2 border-green-500 bg-green-50;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.02);
+  }
+}
+
+.pulse-animation {
+  animation: pulse 2s ease-in-out infinite;
+}
