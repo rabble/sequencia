@@ -64,6 +64,7 @@ export const CurrentSpeaker: React.FC<CurrentSpeakerProps> = ({
           <button
             onClick={() => onEndTurn(speaker.id)}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            aria-label={`End turn for ${speaker.name}`}
           >
             End Turn
           </button>
@@ -71,6 +72,7 @@ export const CurrentSpeaker: React.FC<CurrentSpeakerProps> = ({
           <button
             onClick={() => onSkip(speaker.id)}
             className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700"
+            aria-label={`Skip ${speaker.name}`}
           >
             Skip
           </button>
@@ -78,6 +80,7 @@ export const CurrentSpeaker: React.FC<CurrentSpeakerProps> = ({
           <button
             onClick={() => onPause(speaker.id)}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            aria-label={isPaused ? `Resume ${speaker.name}` : `Pause ${speaker.name}`}
           >
             {isPaused ? 'Resume' : 'Pause'}
           </button>

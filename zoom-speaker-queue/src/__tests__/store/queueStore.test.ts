@@ -77,6 +77,9 @@ describe('Queue Store', () => {
     });
 
     it('should automatically advance to next speaker', () => {
+      // Set auto-advance delay to 0 for immediate advancement
+      useQueueStore.getState().setAutoAdvanceDelay(0);
+      
       useQueueStore.getState().addParticipant({ id: '1', name: 'John Doe' });
       useQueueStore.getState().addParticipant({ id: '2', name: 'Jane Smith' });
       

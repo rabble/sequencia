@@ -1,14 +1,21 @@
 // ABOUTME: Main application component that orchestrates the speaker queue functionality
 // ABOUTME: Integrates Zoom SDK, manages queue state, and renders the UI components
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useQueueStore } from './store/queueStore';
 import { CurrentSpeaker } from './components/CurrentSpeaker';
 import { QueueList } from './components/QueueList';
+import { AutoAdvanceCountdown } from './components/AutoAdvanceCountdown';
 import { ZoomService } from './services/zoomService';
+import { useChatIntegration } from './hooks/useChatIntegration';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 function App() {
   const [error, setError] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState<string>('');
+  const previousSpeakerRef = useRef<string | null>(null);
+  
+  const chat = useChatIntegration();
 
   const {
     participants,
@@ -19,6 +26,7 @@ function App() {
     skipParticipant,
     pauseParticipant,
     unpauseParticipant,
+    reorderParticipants,
     shuffleQueue,
     resetQueue,
     getQueueProgress
@@ -26,6 +34,21 @@ function App() {
 
   const currentSpeakerData = participants.find(p => p.id === currentSpeaker);
   const queueProgress = getQueueProgress();
+
+  // Announce speaker changes
+  useEffect(() => {
+    if (currentSpeaker !== previousSpeakerRef.current) {
+      if (currentSpeaker) {
+        const speaker = participants.find(p => p.id === currentSpeaker);
+        if (speaker) {
+          setAnnouncement(`${speaker.name} is now speaking`);
+        }
+      } else if (previousSpeakerRef.current && queueProgress.remaining === 0) {
+        setAnnouncement('All speakers have finished');
+      }
+      previousSpeakerRef.current = currentSpeaker;
+    }
+  }, [currentSpeaker, participants, queueProgress.remaining]);
 
   useEffect(() => {
     // Initialize Zoom SDK
@@ -68,25 +91,43 @@ function App() {
     initializeZoom();
   }, []);
 
-  const handleStartQueue = () => {
+  const handleStartQueue = async () => {
     if (participants.length > 0 && !currentSpeaker) {
       const firstParticipant = participants.find(p => p.status === 'waiting');
       if (firstParticipant) {
         startSpeaking(firstParticipant.id);
+        await chat.postQueueStarted(participants);
       }
     }
   };
 
-  const handleEndTurn = (id: string) => {
+  const handleEndTurn = async (id: string) => {
+    const current = participants.find(p => p.id === id);
     endTurn(id);
+    
+    // Find next speaker
+    const next = participants.find(p => p.status === 'waiting');
+    if (current) {
+      await chat.postSpeakerChange(current, next || null);
+    }
+    
+    // If no more speakers, queue is complete
+    if (!next) {
+      await chat.postQueueCompleted();
+    }
   };
 
-  const handleSkip = (id: string) => {
+  const handleSkip = async (id: string) => {
+    const skipped = participants.find(p => p.id === id);
     skipParticipant(id);
     // Auto-advance to next
     const next = participants.find(p => p.status === 'waiting');
     if (next) {
       startSpeaking(next.id);
+    }
+    
+    if (skipped) {
+      await chat.postSkip(skipped, next || null);
     }
   };
 
@@ -100,6 +141,24 @@ function App() {
       }
     }
   };
+
+  // Keyboard shortcuts
+  const { shortcuts } = useKeyboardShortcuts({
+    onStartQueue: handleStartQueue,
+    onEndTurn: () => {
+      if (currentSpeaker) {
+        handleEndTurn(currentSpeaker);
+      }
+    },
+    onPause: () => {
+      if (currentSpeaker) {
+        handlePause(currentSpeaker);
+      }
+    },
+    onReset: resetQueue,
+    onShuffle: shuffleQueue,
+    isQueueActive: !!currentSpeaker
+  });
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -115,7 +174,15 @@ function App() {
           )}
         </header>
 
-        <section className="mb-8">
+        {/* Screen reader announcements */}
+        <div className="sr-only" role="status" aria-label="Queue updates" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </div>
+        <div className="sr-only" role="status" aria-label="Speaker announcements" aria-live="assertive">
+          {announcement}
+        </div>
+
+        <section className="mb-8" role="region" aria-label="Now speaking">
           <h2 className="text-xl font-semibold mb-4 text-gray-700">Now Speaking</h2>
           <CurrentSpeaker
             speaker={currentSpeakerData || null}
@@ -126,7 +193,9 @@ function App() {
           />
         </section>
 
-        <section className="mb-8">
+        <AutoAdvanceCountdown />
+
+        <section className="mb-8" role="region" aria-label="Queue">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-gray-700">
               Up Next ({queueProgress.remaining} remaining)
@@ -142,11 +211,12 @@ function App() {
           </div>
           <QueueList
             participants={participants}
+            onReorder={reorderParticipants}
             onPause={handlePause}
           />
         </section>
 
-        <section className="mb-8">
+        <section className="mb-8" role="region" aria-label="Completed speakers">
           <h2 className="text-xl font-semibold mb-4 text-gray-700">
             Completed ({queueProgress.completed})
           </h2>
@@ -178,6 +248,19 @@ function App() {
             ♻️ Reset
           </button>
         </section>
+
+        {/* Keyboard shortcuts help */}
+        <details className="mt-8 text-sm text-gray-600">
+          <summary className="cursor-pointer hover:text-gray-800">Keyboard Shortcuts</summary>
+          <ul className="mt-2 space-y-1">
+            {shortcuts.filter(s => s.enabled).map(shortcut => (
+              <li key={shortcut.key}>
+                <kbd className="px-2 py-1 bg-gray-200 rounded text-xs font-mono">{shortcut.key}</kbd>
+                <span className="ml-2">{shortcut.description}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
       </div>
     </div>
   );
